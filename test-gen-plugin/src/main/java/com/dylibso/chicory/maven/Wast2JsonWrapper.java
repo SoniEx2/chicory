@@ -2,6 +2,12 @@ package com.dylibso.chicory.maven;
 
 import static com.dylibso.chicory.maven.Constants.SPEC_JSON;
 
+import com.dylibso.chicory.maven.wast2jsonwasi.ExitStatus;
+import com.dylibso.chicory.maven.wast2jsonwasi.WasiArgs;
+import com.dylibso.chicory.maven.wast2jsonwasi.WasiEnv;
+import com.dylibso.chicory.maven.wast2jsonwasi.WasiInputOutput;
+import com.dylibso.chicory.maven.wast2jsonwasi.Wast2JsonImports;
+import com.dylibso.chicory.runtime.Module;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.File;
@@ -50,7 +56,7 @@ public class Wast2JsonWrapper {
     }
 
     public void fetch() {
-        wast2JsonCmd = resolveOrInstallWast2Json();
+        wast2JsonCmd = resolveOrInstallWast2Json(true);
     }
 
     public File execute(File wastFile) {
@@ -84,12 +90,31 @@ public class Wast2JsonWrapper {
         }
 
         if (ps.exitValue() != 0) {
-            System.err.println("wast2json exiting with:" + ps.exitValue());
-            System.err.println(ps.getErrorStream().toString());
+            if (new File(wast2JsonCmd).exists()) {
+                executeWast2JsonWasi(command);
+                return targetFolder;
+            }
+            System.err.println("wast2json exiting with: " + ps.exitValue());
             throw new RuntimeException("Failed to execute wast2json program.");
         }
 
         return targetFolder;
+    }
+
+    private void executeWast2JsonWasi(List<String> command) {
+        try {
+            var module = Module.builder(new File(wast2JsonCmd)).build();
+            var args = new WasiArgs(command);
+            var env = new WasiEnv(List.of());
+            var io = WasiInputOutput.builder().build();
+            var instance = module.instantiate(new Wast2JsonImports(args, env, io));
+            throw new RuntimeException("wast2json didn't exit properly.");
+        } catch (ExitStatus exitStatus) {
+            if (exitStatus.getExitCode() != 0) {
+                System.err.println("wast2json exiting with: " + exitStatus.getExitCode());
+                throw new RuntimeException("Failed to execute wast2json program.");
+            }
+        }
     }
 
     private void downloadAndExtract(URL url) {
@@ -149,7 +174,7 @@ public class Wast2JsonWrapper {
         }
     }
 
-    private String resolveOrInstallWast2Json() {
+    private String resolveOrInstallWast2Json(boolean wasi) {
         ProcessBuilder pb = new ProcessBuilder(WAST2JSON, "--version");
         pb.directory(new File("."));
         Process ps = null;
@@ -210,7 +235,8 @@ public class Wast2JsonWrapper {
 
         log.info("Cannot locate " + WAST2JSON + " binary, downloading");
 
-        var fileName = "wabt-" + wabtVersion + "-" + wabtArchitectureName() + ".tar.gz";
+        var fileName =
+                "wabt-" + wabtVersion + "-" + (wasi ? "wasi" : wabtArchitectureName()) + ".tar.gz";
         var wabtRelease = wabtReleasesURL + wabtVersion + "/" + fileName;
         try {
             downloadAndExtract(URI.create(wabtRelease).toURL());
