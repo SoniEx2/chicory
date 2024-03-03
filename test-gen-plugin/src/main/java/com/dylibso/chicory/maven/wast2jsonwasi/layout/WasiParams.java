@@ -40,8 +40,7 @@ public class WasiParams {
                 instance.memory().writeByte(addr + params[i].length, (byte) 0);
                 instance.memory().writeI32(Layout.PTR32.arrayElement(paramAddresses, i), addr);
             }
-            instance.memory()
-                    .writeI32(Layout.PTR32.arrayElement(paramAddresses, params.length), 0);
+            instance.memory().writeI32(Layout.PTR32.arrayElement(paramAddresses, params.length), 0);
             return WasiErrno.SUCCESS;
         }
     }

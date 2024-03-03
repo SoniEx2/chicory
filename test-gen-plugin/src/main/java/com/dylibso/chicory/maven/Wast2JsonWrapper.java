@@ -3,6 +3,7 @@ package com.dylibso.chicory.maven;
 import static com.dylibso.chicory.maven.Constants.SPEC_JSON;
 
 import com.dylibso.chicory.maven.wast2jsonwasi.ExitStatus;
+import com.dylibso.chicory.maven.wast2jsonwasi.Fildes;
 import com.dylibso.chicory.maven.wast2jsonwasi.WasiArgs;
 import com.dylibso.chicory.maven.wast2jsonwasi.WasiEnv;
 import com.dylibso.chicory.maven.wast2jsonwasi.WasiInputOutput;
@@ -22,6 +23,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SecureDirectoryStream;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -72,6 +76,20 @@ public class Wast2JsonWrapper {
             log.warn("Could not create folder: " + targetFolder);
         }
 
+        if (!wast2JsonCmd.equals(WAST2JSON)) {
+            // not using system wast2json
+            if (new File(wast2JsonCmd).exists()) {
+                var command =
+                        List.of(
+                                WAST2JSON,
+                                "/testsuite/" + wastFile.getName(),
+                                "-o",
+                                "/output/" + SPEC_JSON);
+                executeWast2JsonWasi(command, wastFile, targetFolder);
+                return targetFolder;
+            }
+        }
+
         var command =
                 List.of(wast2JsonCmd, wastFile.getAbsolutePath(), "-o", destFile.getAbsolutePath());
         log.info("Going to execute command: " + String.join(" ", command));
@@ -90,10 +108,6 @@ public class Wast2JsonWrapper {
         }
 
         if (ps.exitValue() != 0) {
-            if (new File(wast2JsonCmd).exists()) {
-                executeWast2JsonWasi(command);
-                return targetFolder;
-            }
             System.err.println("wast2json exiting with: " + ps.exitValue());
             throw new RuntimeException("Failed to execute wast2json program.");
         }
@@ -101,12 +115,27 @@ public class Wast2JsonWrapper {
         return targetFolder;
     }
 
-    private void executeWast2JsonWasi(List<String> command) {
-        try {
+    private void executeWast2JsonWasi(List<String> command, File wastFile, File targetFolder) {
+        try (var testsuiteDir = Files.newDirectoryStream(wastFile.toPath().getParent());
+                var outputDir = Files.newDirectoryStream(targetFolder.toPath())) {
+            if (!(testsuiteDir instanceof SecureDirectoryStream<?>)) {
+                throw new RuntimeException(
+                        "Failed to execute wast2json program: SecureDirectoryStream not supported"
+                                + " on this platform.");
+            }
             var module = Module.builder(new File(wast2JsonCmd)).build();
             var args = new WasiArgs(command);
             var env = new WasiEnv(List.of());
-            var io = WasiInputOutput.builder().build();
+            var io =
+                    WasiInputOutput.builder()
+                            .addPreopen(
+                                    new Fildes.PreopenDir.FilesystemBacked(
+                                            "/testsuite",
+                                            (SecureDirectoryStream<Path>) testsuiteDir))
+                            .addPreopen(
+                                    new Fildes.PreopenDir.FilesystemBacked(
+                                            "/output", (SecureDirectoryStream<Path>) outputDir))
+                            .build();
             var instance = module.instantiate(new Wast2JsonImports(args, env, io));
             throw new RuntimeException("wast2json didn't exit properly.");
         } catch (ExitStatus exitStatus) {
@@ -114,6 +143,8 @@ public class Wast2JsonWrapper {
                 System.err.println("wast2json exiting with: " + exitStatus.getExitCode());
                 throw new RuntimeException("Failed to execute wast2json program.");
             }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 

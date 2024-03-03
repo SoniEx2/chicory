@@ -1,6 +1,10 @@
 package com.dylibso.chicory.maven.wast2jsonwasi.layout;
 
 import com.dylibso.chicory.wasm.types.Value;
+import java.io.IOException;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.NoSuchFileException;
 
 public enum WasiErrno {
     SUCCESS,
@@ -32,11 +36,39 @@ public enum WasiErrno {
     EINPROGRESS,
     EINTR,
     EINVAL,
-    EIO;
+    EIO,
+    EISCONN,
+    EISDIR,
+    ELOOP,
+    EMFILE,
+    EMLINK,
+    EMSGSIZE,
+    EMULTIHOP,
+    ENAMETOOLONG,
+    ENETDOWN,
+    ENETRESET,
+    ENETUNREACH,
+    ENFILE,
+    ENOBUFS,
+    ENODEV,
+    ENOENT;
 
     /* TODO add all the rest of them */
 
     public Value toValue() {
         return Value.i32(this.ordinal());
+    }
+
+    public static WasiErrno fromIOException(IOException e) {
+        if (e instanceof AccessDeniedException) {
+            return EACCES;
+        }
+        if (e instanceof NoSuchFileException) {
+            return ENOENT;
+        }
+        if (e instanceof FileAlreadyExistsException) {
+            return EEXIST;
+        }
+        return EIO;
     }
 }
