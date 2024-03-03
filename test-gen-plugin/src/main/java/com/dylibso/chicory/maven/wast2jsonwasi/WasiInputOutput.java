@@ -160,7 +160,13 @@ public class WasiInputOutput {
         }
         WasiFilestat.Values stat;
         try {
-            stat = ((Fildes.PreopenDir) fildes).stat(stringPath);
+            if ((flags & 1) == 0) {
+                stat =
+                        ((Fildes.PreopenDir) fildes)
+                                .stat(stringPath, WasiLookupOption.NOFOLLOW_LINKS);
+            } else {
+                stat = ((Fildes.PreopenDir) fildes).stat(stringPath);
+            }
         } catch (IOException e) {
             return new Value[] {WasiErrno.fromIOException(e).toValue()};
         }

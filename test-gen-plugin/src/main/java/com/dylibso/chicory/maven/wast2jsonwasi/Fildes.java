@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.SecureDirectoryStream;
 import java.nio.file.attribute.BasicFileAttributeView;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -39,7 +40,9 @@ public class Fildes {
         /**
          * Basic openat-based implementation of WASI preopen.
          * <p>
-         * This implementation does not support symlinks, because Java does not support openat2 and RESOLVE_BENEATH.
+         * This implementation does not support symlinks properly, because Java does not support openat2 and RESOLVE_BENEATH. Expect symlinks to misbehave!
+         * <p>
+         * (Hey, at least this does avoid TOCTOU.)
          */
         public static class FilesystemBacked extends PreopenDir {
             private final SecureDirectoryStream<Path> baseDir;
@@ -54,11 +57,18 @@ public class Fildes {
                     throws IOException {
                 var values = new WasiFilestat.Values();
                 // FIXME hmm these are probably wrong
-                BasicFileAttributeView fileAttributeView =
-                        baseDir.getFileAttributeView(
-                                Path.of(stringPath),
-                                BasicFileAttributeView.class,
-                                LinkOption.NOFOLLOW_LINKS);
+                BasicFileAttributeView fileAttributeView;
+                if (Arrays.stream(options).anyMatch(x -> x == WasiLookupOption.NOFOLLOW_LINKS)) {
+                    fileAttributeView =
+                            baseDir.getFileAttributeView(
+                                    Path.of(stringPath),
+                                    BasicFileAttributeView.class,
+                                    LinkOption.NOFOLLOW_LINKS);
+                } else {
+                    fileAttributeView =
+                            baseDir.getFileAttributeView(
+                                    Path.of(stringPath), BasicFileAttributeView.class);
+                }
                 BasicFileAttributes basicFileAttributes = fileAttributeView.readAttributes();
                 values.size = basicFileAttributes.size();
                 if (basicFileAttributes.isDirectory()) {
